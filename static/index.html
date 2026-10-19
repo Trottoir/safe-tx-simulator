@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safe Tx Simulator</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+    --muted:#8b93a7; --accent:#4f8cff; --ok:#39d98a; --err:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;
+  }
+  .wrap{max-width:1600px; margin:0 auto; padding:2rem 1.5rem}
+  h1{font-size:1.4rem; margin:0 0 .25rem}
+  .sub{color:var(--muted); margin:0 0 1.5rem}
+  form{display:flex; gap:.5rem; flex-wrap:wrap}
+  input{
+    flex:1; min-width:260px; padding:.65rem .75rem; border-radius:8px;
+    border:1px solid var(--border); background:var(--panel); color:var(--text);
+    font-family:ui-monospace,Menlo,monospace;
+  }
+  input:focus{outline:none; border-color:var(--accent)}
+  button{
+    padding:.65rem 1.1rem; border:0; border-radius:8px; cursor:pointer;
+    background:var(--accent); color:#fff; font-weight:600;
+  }
+  button:disabled{opacity:.5; cursor:default}
+  .msg{margin:1rem 0; padding:.75rem 1rem; border-radius:8px; display:none}
+  .msg.err{display:block; background:#2a1718; border:1px solid var(--err); color:var(--err)}
+  .msg.err:empty{display:none}
+  .card{
+    margin-top:1.5rem; background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; overflow:hidden; display:none;
+  }
+  .card.show{display:block}
+  .status{
+    padding:.6rem 1rem; font-weight:600; border-bottom:1px solid var(--border);
+  }
+  .status.ok{color:var(--ok)} .status.bad{color:var(--err)}
+  .summary{
+    display:grid; grid-template-columns:120px 1fr; gap:.4rem 1rem;
+    padding:1rem; border-bottom:1px solid var(--border); font-size:.9rem;
+  }
+  .summary dt{color:var(--muted)}
+  .summary dd{margin:0; font-family:ui-monospace,Menlo,monospace; word-break:break-all}
+  .tok{padding:1rem; border-bottom:1px solid var(--border); overflow-x:auto}
+  .tok h2{font-size:.95rem; margin:0 0 .5rem}
+  .tok table{border-collapse:collapse; width:100%; font:12px/1.5 ui-monospace,Menlo,monospace}
+  .tok th{text-align:left; color:var(--muted); font-weight:500}
+  .tok td,.tok th{padding:.2rem .6rem .2rem 0; white-space:nowrap}
+  .tok .muted{color:var(--muted)}
+  .pos{color:var(--ok)} .neg{color:var(--err)}
+  details.book{margin-top:1.5rem; background:var(--panel); border:1px solid var(--border); border-radius:10px}
+  details.book summary{padding:.6rem 1rem; cursor:pointer; font-weight:600}
+  .book-body{padding:0 1rem 1rem}
+  .book-body input{min-width:0; padding:.4rem .5rem; font-size:13px}
+  .book-body table{border-collapse:collapse; width:100%; margin-bottom:.75rem; font:13px/1.5 ui-monospace,Menlo,monospace}
+  .book-body td{padding:.2rem .5rem .2rem 0; vertical-align:middle}
+  .book-body td:first-child{word-break:break-all}
+  .book-body .x{background:transparent; color:var(--err); padding:.2rem .5rem}
+  .book-body .add{display:flex; gap:.5rem; flex-wrap:wrap}
+  .book-body .add input:first-child{flex:2} .book-body .add input:nth-child(2){flex:1}
+  #pending{padding:1rem 0 0; border:0}
+  #pending button{padding:.2rem .6rem; font-size:12px}
+  a.addr{color:var(--accent); text-decoration:none; cursor:pointer}
+  a.addr:hover{text-decoration:underline}
+  pre{
+    margin:0; padding:1rem; overflow:auto; max-height:60vh;
+    font:13px/1.45 ui-monospace,Menlo,monospace; white-space:pre;
+  }
+  .spin{display:inline-block; width:1em; height:1em; border:2px solid #fff6;
+    border-top-color:#fff; border-radius:50%; animation:s .7s linear infinite;
+    vertical-align:-2px; margin-right:.4rem}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Safe Transaction Simulator</h1>
+  <p class="sub">Simulate a pending Safe multisig tx against the latest mainnet block, with full decoded trace.</p>
+
+  <form id="f">
+    <input id="hash" placeholder="safeTxHash or app.safe.global tx link" autocomplete="off" autofocus>
+    <button id="go">Simulate</button>
+  </form>
+
+  <details class="book" id="safes" open>
+    <summary>My Safes (<span id="safes-n">0</span>) — pending transactions</summary>
+    <div class="book-body">
+      <div id="safes-err" class="msg err"></div>
+      <table id="safes-rows"></table>
+      <form class="add" id="safes-add">
+        <input id="safes-addr" placeholder="0x… Safe address" autocomplete="off" required pattern="0x[0-9a-fA-F]{40}">
+        <button>Add Safe</button>
+        <button type="button" id="pending-go">Load pending</button>
+      </form>
+      <div class="tok" id="pending"></div>
+    </div>
+  </details>
+
+  <div id="err" class="msg err"></div>
+
+  <div id="card" class="card">
+    <div id="status" class="status"></div>
+    <dl class="summary" id="summary"></dl>
+    <div class="tok" id="balances"></div>
+    <div class="tok" id="transfers"></div>
+    <pre id="trace"></pre>
+  </div>
+
+  <details class="book" id="book">
+    <summary>Address book (<span id="book-n">0</span>)</summary>
+    <div class="book-body">
+      <div id="book-err" class="msg err"></div>
+      <table id="book-rows"></table>
+      <form class="add" id="book-add">
+        <input id="book-addr" placeholder="0x… address" autocomplete="off" required pattern="0x[0-9a-fA-F]{40}">
+        <input id="book-label" placeholder="Label" autocomplete="off" required maxlength="64">
+        <button>Add / update</button>
+      </form>
+    </div>
+  </details>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
